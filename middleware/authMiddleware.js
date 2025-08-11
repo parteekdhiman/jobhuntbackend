@@ -3,7 +3,9 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
 const protect = async (req, res, next) => {
-  let token = req.headers.authorization?.split(' ')[1];
+  const authHeader = req.headers.authorization || '';
+  const isBearer = authHeader.startsWith('Bearer ');
+  const token = isBearer ? authHeader.split(' ')[1] : null;
 
   if (!token) {
     return res.status(401).json({ message: 'Not authorized, no token' });
@@ -11,10 +13,14 @@ const protect = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select('-password'); // attach user to request
+    const user = await User.findById(decoded.id).select('-password');
+    if (!user) {
+      return res.status(401).json({ message: 'Not authorized, user not found' });
+    }
+    req.user = user;
     next();
   } catch (err) {
-    res.status(401).json({ message: 'Invalid token' });
+    return res.status(401).json({ message: 'Invalid token' });
   }
 };
 

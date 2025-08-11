@@ -79,7 +79,7 @@ export const verifyOtp = async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Use correct field names from the database
+    // Validate OTP and expiry only
     if (user.resetOTP !== otp) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
@@ -88,19 +88,15 @@ export const verifyOtp = async (req, res) => {
       return res.status(400).json({ message: "OTP expired" });
     }
 
-    // Clear OTP fields after verification
-    user.resetOTP = null;
-    user.resetOTPExpires = null;
-    await user.save();
-
-    res.status(200).json({ message: "OTP verified successfully" });
+    // Do not clear OTP here; allow resetPassword to use it and clear afterward
+    return res.status(200).json({ message: "OTP verified successfully" });
   } catch (err) {
     console.error("Verify OTP Error:", err);
     res.status(500).json({ message: "Server error during OTP verification" });
   }
 };
 export const resetPassword = async (req, res) => {
-  const { email, password, confirmPassword } = req.body;
+  const { email, otp, password, confirmPassword } = req.body;
 
   if (password !== confirmPassword) {
     return res.status(400).json({ message: 'Passwords do not match' });
@@ -110,8 +106,22 @@ export const resetPassword = async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    // const salt = await bcrypt.genSalt(10);
-    // user.password = await bcrypt.hash(password, salt);
+    if (!otp) {
+      return res.status(400).json({ message: 'OTP is required' });
+    }
+
+    if (user.resetOTP !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    if (user.resetOTPExpires < Date.now()) {
+      return res.status(400).json({ message: 'OTP expired' });
+    }
+
+    // Set new password; pre-save hook will hash it
+    user.password = password;
+    user.resetOTP = null;
+    user.resetOTPExpires = null;
     await user.save();
 
     res.status(200).json({ message: 'Password reset successful' });
