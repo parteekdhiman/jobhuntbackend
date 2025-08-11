@@ -20,7 +20,21 @@ export const createJob = async (req, res) => {
 
 export const getJobs = async (req, res) => {
   try {
-    const jobs = await Job.find({ user: req.user._id }).sort({ createdAt: -1 });
+    const page = Number.parseInt(req.query.page, 10) || 1;
+    const limit = Math.min(Number.parseInt(req.query.limit, 10) || 100, 100);
+    const skip = (page - 1) * limit;
+
+    const query = { user: req.user._id };
+    if (req.query.status) {
+      query.status = req.query.status;
+    }
+
+    const [jobs, total] = await Promise.all([
+      Job.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Job.countDocuments(query),
+    ]);
+
+    res.set('X-Total-Count', String(total));
     res.json(jobs);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -42,9 +56,15 @@ export const deleteJob = async (req, res) => {
 
 export const updateJob = async (req, res) => {
   try {
+    const allowedFields = ['company', 'position', 'status'];
+    const updates = {};
+    for (const key of allowedFields) {
+      if (key in req.body) updates[key] = req.body[key];
+    }
+
     const job = await Job.findOneAndUpdate(
       { _id: req.params.id, user: req.user._id },
-      req.body,
+      updates,
       { new: true }
     );
     if (!job) return res.status(404).json({ message: "Job not found" });
